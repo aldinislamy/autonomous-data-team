@@ -51,18 +51,29 @@ def engineer_node(state: TeamState):
         content="""Kamu adalah Engineer Agent.
     Tugasmu HANYA mengambil data dari database menggunakan tools.
     Jangan analisis — cukup ambil data yang relevan dengan pertanyaan.
-    Setelah dapat data, kembalikan data mentahnya saja."""
+    Setelah dapat data, kembalikan data mentahnya saja.
+
+    PENTING — Database menggunakan Microsoft SQL Server (T-SQL), bukan MySQL.
+    Gunakan syntax T-SQL yang benar:
+    - Tanggal hari ini: CAST(GETDATE() AS DATE) bukan CURDATE()
+    - Bulan ini: MONTH(GETDATE()) bukan MONTH(NOW())
+    - Limit hasil: SELECT TOP 10 bukan LIMIT 10
+    - Jangan gunakan backtick (`), gunakan tanda kurung siku [] jika perlu escape nama kolom."""
     )
 
     messages = [system] + history + [HumanMessage(content=state["pertanyaan"])]
     response = llm_engineer.invoke(messages)
 
+    print(f"🔧 tool_calls: {response.tool_calls}")
+
     if hasattr(response, "tool_calls") and response.tool_calls:
         tool_node = ToolNode([query_database, get_schema])
         tool_result = tool_node.invoke({"messages": [response]})
         data = tool_result["messages"][-1].content
+        print(f"📦 data dari tool:\n{data[:300]}")
     else:
         data = response.content
+        print(f"⚠️  Tool tidak dipanggil! LLM menjawab sendiri:\n{data[:300]}")
 
     save_message("engineer", "user", state["pertanyaan"])
     save_message("engineer", "assistant", data)
@@ -196,27 +207,32 @@ graph.add_conditional_edges("reporter", routing, {"selesai": END})
 graph.set_entry_point("engineer")
 app = graph.compile()
 
-# ─── JALANKAN! ───
-print("🚀 Autonomous Data Team siap!\n")
-print("=" * 50)
 
-pertanyaan = "Dari analisis sebelumnya, produk mana yang paling laku dan bagaimana tren penjualannya per bulan?"
+def run_pipeline(pertanyaan: str) -> dict:
+    return app.invoke(
+        {
+            "pertanyaan": pertanyaan,
+            "messages": [],
+            "data_mentah": "",
+            "analisis": "",
+            "kritik": "",
+            "laporan": "",
+            "status": "",
+        }
+    )
 
-print(f"❓ Pertanyaan: {pertanyaan}\n")
 
-result = app.invoke(
-    {
-        "pertanyaan": pertanyaan,
-        "messages": [],
-        "data_mentah": "",
-        "analisis": "",
-        "kritik": "",
-        "laporan": "",
-        "status": "",
-    }
-)
+if __name__ == "__main__":
+    print("🚀 Autonomous Data Team siap!\n")
+    print("=" * 50)
 
-print("\n" + "=" * 50)
-print("📄 LAPORAN AKHIR:")
-print("=" * 50)
-print(result["laporan"])
+    pertanyaan = "Dari analisis sebelumnya, produk mana yang paling laku dan bagaimana tren penjualannya per bulan?"
+
+    print(f"❓ Pertanyaan: {pertanyaan}\n")
+
+    result = run_pipeline(pertanyaan)
+
+    print("\n" + "=" * 50)
+    print("📄 LAPORAN AKHIR:")
+    print("=" * 50)
+    print(result["laporan"])
